@@ -18,11 +18,11 @@
 # Location of cocoaDialog binary
 # cocoaDialog provides a "gui" for the repair tool. It should be installed at
 # the path below. NOTE: This must point to the actual binary inside the app bundle
-ccd="/Library/Application Support/UNCA/cocoaDialog.app/Contents/MacOS/cocoaDialog"
+ccd="/path/to/cocoaDialog.app/Contents/MacOS/cocoaDialog"
 # Location of Quit-All-Apps
 # Quit-All-Apps is a small app created in Automator that will close all open applications
 # EXCEPT Self Service after providing the user the opportunity to save work
-qaa="/Library/Application Support/UNCA/Quit-All-Apps.app"
+qaa="/path/to/Quit-All-Apps.app"
 
 # Make sure cocoaDialog is installed; if not, attempt to fix it via policy
 # If the binary is not found, we call a Casper policy with a custom trigger "installcocoaDialog"
