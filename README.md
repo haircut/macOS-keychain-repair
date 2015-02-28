@@ -13,7 +13,7 @@ I use this "utility" (really a shell script and a couple apps) to perform the fo
 
 ## In general...
 
-1. Install cocoaDialog to a known location. I do this during imaging. I use it for many tasks in my environment so I drop it in `/Libaray/Application Support/[INSTITUTION NAME]/`
+1. Install cocoaDialog to a known location. I do this during imaging. I use it for many tasks in my environment so I drop it in `/Library/Application Support/[INSTITUTION NAME]/`
 2. Install QuitAllApps to a known location. I do this during imaging. I put it in the same path as cocoaDialog
 3. Create a Casper policy with custom trigger "installCocoaDialog" to repair broken/missing/etc cocoaDialog locations. The Keychain Repair script will use call this policy via the custom trigger if cocoaDialog is not found, so the policy should simply re-install it.
 4. Do the same thing for QuitAllApps; create a policy with custom trigger "installQuitAllApps" to re-install it.
