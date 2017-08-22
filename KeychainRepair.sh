@@ -32,7 +32,7 @@ repeat with i from 1 to (number of items in process_list)
 	if this_process is not in white_list then
 		try
 			tell application this_process
-				quit saving no
+				quit saving yes
 			end tell
 		on error
 			# do nothing
