@@ -11,49 +11,50 @@
 #      contact <bmwarren@unca.edu>
 #      author: Matthew Warren
 #      created: 2014-09-06
-#      modified: 2015-02-27
+#      modified: 2017-08-21 (Total Eclipse of the Heart Edition)
 #
 #####################################
 
 # Location of cocoaDialog binary
-# cocoaDialog provides a "gui" for the repair tool. It should be installed at
-# the path below. NOTE: This must point to the actual binary inside the app bundle
-ccd="/path/to/cocoaDialog.app/Contents/MacOS/cocoaDialog"
-# Location of Quit-All-Apps
-# Quit-All-Apps is a small app created in Automator that will close all open applications
-# EXCEPT Self Service after providing the user the opportunity to save work
-qaa="/path/to/Quit-All-Apps.app"
+ccd="/Applications/cocoaDialog.app/Contents/MacOS/cocoaDialog"
+
+# JSS trigger to install cocoaDialog if not found
+ccd_trigger="installcocoadialog"
+
+# Quit apps command
+read -r -d '' OSASCRIPT_COMMAND <<EOD
+set white_list to {"Finder","Self Service"}
+tell application "Finder"
+	set process_list to the name of every process whose visible is true
+end tell
+repeat with i from 1 to (number of items in process_list)
+	set this_process to item i of the process_list
+	if this_process is not in white_list then
+		try
+			tell application this_process
+				quit saving no
+			end tell
+		on error
+			# do nothing
+		end try
+	end if
+end repeat
+EOD
 
 # Make sure cocoaDialog is installed; if not, attempt to fix it via policy
-# If the binary is not found, we call a Casper policy with a custom trigger "installcocoaDialog"
-# to attempt to install it.
 if [[ ! -f "${ccd}" ]]; then
-     echo "Keychain Repair: Attempting to install cocoaDialog via policy"
-     /usr/sbin/jamf policy -forceNoRecon -event installCocoaDialog
-     if [[ ! -f "${ccd}" ]]; then
-          echo "Keychain Repair: Unable to install cocoaDialog, so we need to quit"
-          exit 1
-     else
-          echo "Keychain Repair: cocoaDialog is now installed"
-     fi
-fi
-
-# Make sure Quit-All-Apps is installed; if not, attempt to fix it via policy
-# If the app is not found, we call a Casper policy with a custom trigger "installQuitAllApps"
-# to attempt to install it.
-if [[ -z "${qaa}" ]]; then
-     echo "Keychain Repair: Attempting to install Quit-All-Apps via policy"
-     /usr/sbin/jamf policy -forceNoRecon -event installQuitAllApps
-     if [[ -z "${ccd}" ]]; then
-          echo "Keychain Repair: Unable to install Quit-All-Apps, so we need to quit"
-          exit 1
-     else
-          echo "Keychain Repair: Quit-All-Apps is now installed"
-     fi
+	echo "Keychain Repair: Attempting to install cocoaDialog via policy"
+	/usr/local/jamf/bin/jamf policy -forceNoRecon -event "${ccd_trigger}"
+	if [[ ! -f "${ccd}" ]]; then
+		echo "Keychain Repair: Unable to install cocoaDialog, so we need to quit"
+		exit 1
+	else
+		echo "Keychain Repair: cocoaDialog is now installed"
+	fi
 fi
 
 # Get the current User
-User=$(/usr/bin/who | /usr/bin/grep console | /usr/bin/awk '{print $1}')
+User=`python -c 'from SystemConfiguration import SCDynamicStoreCopyConsoleUser; import sys; username = (SCDynamicStoreCopyConsoleUser(None, None, None) or [None])[0]; username = [username,""][username in [u"loginwindow", None, u""]]; sys.stdout.write(username + "\n");'`
 
 # Get the current user's home directory
 UserHomeDirectory=$(/usr/bin/dscl . -read Users/"${User}" NFSHomeDirectory | awk '{print $2}')
@@ -66,71 +67,71 @@ confirmContinue=($("${ccd}" msgbox --icon stop --title "Keychain Repair" --text 
 # be logged that way in Casper since it's not an explicit failure
 # so we will exit successfully regardless of the choice
 if [[ ${confirmContinue[0]} -eq "1" ]]; then
-     # User Quit-All-Apps to close all running applications except Self Service
-     # while prompting User to save open work
-     /usr/bin/open "${qaa}"
-     # Pause briefly to let Quit-All-Apps open and begin closing apps
-     sleep 10
+	# Quit all running applications
+	/usr/bin/osascript -e "${OSASCRIPT_COMMAND}"
+	# Pause briefly to let apps quit
+	sleep 10
 
-     # Get the current User's default (login) keychain
-     CurrentKeychain=$(su "${User}" -c "security list-keychains" | grep login | sed -e 's/\"//g' | sed -e 's/\// /g' | awk '{print $NF}')
+	# Get the current User's default (login) keychain
+	CurrentKeychain=$(su "${User}" -c "security list-keychains" | grep login | sed -e 's/\"//g' | sed -e 's/\// /g' | awk '{print $NF}')
 
-     if [[ -z $CurrentKeychain ]]; then
-          echo "Keychain Repair: Unable to find a login keychain for User $User"
-     else
-          echo "Keychain Repair: Found $UserHomeDirectory/Library/Keychains/${CurrentKeychain} - deleting"
-          mv $UserHomeDirectory/Library/Keychains/$CurrentKeychain $UserHomeDirectory/Library/Keychains/$User.keychain.bkp
-     fi
+	if [[ -z $CurrentKeychain ]]; then
+		echo "Keychain Repair: Unable to find a login keychain for User $User"
+	else
+		echo "Keychain Repair: Found $UserHomeDirectory/Library/Keychains/${CurrentKeychain} - deleting"
+		mv $UserHomeDirectory/Library/Keychains/$CurrentKeychain $UserHomeDirectory/Library/Keychains/$User.keychain.bkp
+	fi
 
-     # Make a new login keychain
+	# Make a new login keychain
 
-     # Prompt for UNCA Security password
-     rv=($("${ccd}" secure-standard-inputbox --icon-file /Applications/Utilities/Keychain\ Access.app/Contents/Resources/Keychain.icns --title "Active Directory Password" --no-newline --informative-text "Enter your current Active Directory password:"))
-     PASSWORD=${rv[1]}
-     # Prompt again for UNCA Security password to confirm
-     rv2=($("${ccd}" secure-standard-inputbox --icon-file /Applications/Utilities/Keychain\ Access.app/Contents/Resources/Keychain.icns --title "Active Directory Password" --no-newline --informative-text "Verify your Active Directory password by entering it again:"))
-     PASSWORD2=${rv2[1]}
+ 	# Prompt for login password
+ 	rv=($("${ccd}" secure-standard-inputbox --icon-file /Applications/Utilities/Keychain\ Access.app/Contents/Resources/Keychain.icns --title "Password" --no-newline --informative-text "Enter your current login password:"))
+ 	PASSWORD=${rv[1]}
+ 	# Prompt again for password to confirm
+ 	rv2=($("${ccd}" secure-standard-inputbox --icon-file /Applications/Utilities/Keychain\ Access.app/Contents/Resources/Keychain.icns --title "Password" --no-newline --informative-text "Verify your login password by entering it again:"))
+ 	PASSWORD2=${rv2[1]}
 
-     # Ensure passwords match
-     if [[ "${PASSWORD}" != "${PASSWORD2}" ]]; then
-          # Confirm with User that they'd like to continue
-          "${ccd}" msgbox --icon stop --title "Keychain Repair" --text "Password mismatch!" --informative-text "The two passwords you entered do not match. Please close this utility and restart from it from Self Service." --float --button1 "Close"
-          exit 0
-     fi
+ 	# Ensure passwords match
+ 	if [[ "${PASSWORD}" != "${PASSWORD2}" ]]; then
+ 		# Confirm with User that they'd like to continue
+ 		"${ccd}" msgbox --icon stop --title "Keychain Repair" --text "Password mismatch!" --informative-text "The two passwords you entered do not match. Please close this utility and restart from it from Self Service." --float --button1 "Close"
+ 		exit 0
+ 	fi
 
-     # Create the new login keychain
+	# Create the new login keychain
 expect <<- DONE
-     set timeout -1
-     spawn su "${User}" -c "security create-keychain login.keychain"
-     # Look for  prompt
-     expect "*?chain:*"
-     # send User entered password from CocoaDialog
-     send "$PASSWORD\n"
-     expect "*?chain:*"
-     send "$PASSWORD\r"
-     expect EOF
+	set timeout -1
+	spawn su "${User}" -c "security create-keychain login.keychain"
+	# Look for  prompt
+	expect "*?chain:*"
+	# send User entered password from CocoaDialog
+	send "$PASSWORD\n"
+	expect "*?chain:*"
+	send "$PASSWORD\r"
+	expect EOF
 DONE
 
-     #Set the newly created login.keychain as the Users default keychain
-     su "${User}" -c "security default-keychain -s login.keychain"
+	#Set the newly created login.keychain as the Users default keychain
+	su "${User}" -c "security default-keychain -s login.keychain"
 
-     # Current user's Local Items keychain
-     LocalItemsKeychainHash=$(ls "${UserHomeDirectory}"/Library/Keychains/ | egrep '([A-Z0-9]{8})((-)([A-Z0-9]{4})){3}(-)([A-Z0-9]{12})')
+	#Unset timeout/lock behavior
+	su "${User}" -c "security set-keychain-settings login.keychain"
 
-     if [[ -z $LocalItemsKeychainHash ]]; then
-          echo "Keychain Repair: Unable to find a Local Items keychain"
-     else
-          echo "Keychain Repair: Deleting ${UserHomeDirectory}/Library/Keychains/${LocalItemsKeychainHash}"
-          rm -rf ${UserHomeDirectory}/Library/Keychains/${LocalItemsKeychainHash}
-     fi
+	# Current user's Local Items keychain
+	LocalItemsKeychainHash=$(ls "${UserHomeDirectory}"/Library/Keychains/ | egrep '([A-Z0-9]{8})((-)([A-Z0-9]{4})){3}(-)([A-Z0-9]{12})')
 
-     # All done, warn the user the system is rebooting, send the command and exit
-     "${ccd}" ok-msgbox --title "Keychain Repair" --text "Keychain Repair Complete" --informative-text "The Keychain Repair utility has repaired your keychain. This device must now reboot to complete the process. Please log back in with your current Active Directory credentials once the system is back online." --icon sync --float --no-cancel
+	if [[ -z $LocalItemsKeychainHash ]]; then
+		echo "Keychain Repair: Unable to find a Local Items keychain"
+	else
+ 		echo "Keychain Repair: Deleting ${UserHomeDirectory}/Library/Keychains/${LocalItemsKeychainHash}"
+		rm -rf ${UserHomeDirectory}/Library/Keychains/${LocalItemsKeychainHash}
+	fi
 
-     shutdown -r now
+	# All done, warn the user the system is rebooting, send the command and exit
+	"${ccd}" ok-msgbox --title "Keychain Repair" --text "Keychain Repair Complete" --informative-text "The Keychain Repair utility has repaired your keychain. This device must now reboot to complete the process. Please log back in with your current credentials once the system is back online." --icon sync --float --no-cancel
 
-     exit 0
+	exit 0
 else
-     echo "Keychain Repair: User '${User}' decided to cancel"
-     exit 0
+	echo "Keychain Repair: User '${User}' decided to cancel"
+	exit 0
 fi
